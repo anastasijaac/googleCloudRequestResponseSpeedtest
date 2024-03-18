@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Application</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <style>
+        /* Inline CSS */
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        form {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        label, input, button {
+            display: block;
+            margin-top: 10px;
+        }
+        input[type="file"],
+        input[type="number"] {
+            margin-top: 5px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        table {
+            width: 100%;
+            margin-top: 20px;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f0f0f0;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+<h1>Web Application</h1>
+<p>Find the minimum integer location (line number) and value from an uploaded CSV file.</p>
+
+<!-- Form to Upload Input File -->
+<form id="upload-form">
+    <label for="input-file">Upload Input File (CSV):</label>
+    <input type="file" id="input-file" accept=".csv" required>
+
+    <!-- Input for Threshold Value -->
+    <label for="threshold-value">Threshold Value:</label>
+    <input type="number" id="threshold-value" required placeholder="Enter threshold value" min="1">
+
+    <!-- Dropdown to select the backend -->
+    <label for="backend-selection">Choose a backend:</label>
+    <select id="backend-selection">
+        <option value="server">Server</option>
+        <option value="serverless">Serverless</option>
+    </select>
+
+
+    <button type="submit">Calculate Minimum Integer</button>
+</form>
+
+
+<!-- Button to Download Results (CSV) -->
+<button id="download-results-button" style="display: none;" onclick="downloadResultsAsCSV()">Download Results as CSV</button>
+
+<!-- Table to Display Request and Processing Time -->
+<table id="request-processing-time-table">
+    <thead>
+    <tr>
+        <th>Number of Requests</th>
+        <th>Processing Time (ms)</th>
+    </tr>
+    </thead>
+    <tbody>
+    <!-- Results will be dynamically inserted here -->
+    </tbody>
+</table>
+
+<!-- JavaScript for Handling Form Submission and API Communication -->
+<script>
+
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById("upload-form").addEventListener("submit", function (e) {
+            e.preventDefault();
+            const fileInput = document.getElementById("input-file");
+            const thresholdValue = parseInt(document.getElementById("threshold-value").value, 10);
+            if (fileInput.files.length > 0 && thresholdValue) {
+                clearResultsTable();
+                sendDecreasingRequests(thresholdValue);
+            } else {
+                alert('Please enter a valid threshold value and select a file.');
+            }
+        });
+
+
+
+        // Function to clear results from the table and remove the download button
+        function clearResultsTable() {
+            const tableBody = document.getElementById('request-processing-time-table').getElementsByTagName('tbody')[0];
+            tableBody.innerHTML = '';
+            document.getElementById('download-results-button').style.display = 'none';
+        }
+
+        async function sendDecreasingRequests(thresholdValue) {
+            let numberOfRequests = thresholdValue;
+            const results = [];
+            const file = document.getElementById('input-file').files[0];
+
+            while (numberOfRequests > 0) {
+                const startTime = performance.now();
+
+                const requestPromises = [];
+                for (let i = 0; i < numberOfRequests; i++) {
+                    requestPromises.push(sendRequest(file, thresholdValue));
+                }
+
+                await Promise.all(requestPromises);
+
+                const endTime = performance.now();
+                const processingTime = endTime - startTime;
+                results.push({numberOfRequests, processingTime});
+                updateRequestProcessingTimeTable(numberOfRequests, processingTime);
+
+                numberOfRequests--;
+            }
+
+            enableDownloadResultsButton(results);
+        }
+
+        // Function to send the request to the selected backend
+        async function sendRequest(file, thresholdValue) {
+            // Get the current selection from the dropdown
+            const backendType = document.getElementById('backend-selection').value;
+            const backendUrls = {
+                server: 'http://35.198.185.122:8080/api/process',
+                serverless: 'https://cloud-computing-412721-gsyphg3sra-ey.a.run.app/api/process'
+            };
+
+            // Set the backendUrl based on the selection
+            const backendUrl = backendUrls[backendType];
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('threshold', thresholdValue);
+
+            try {
+                const response = await fetch(backendUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) {
+                    throw new Error('Server responded with status: ' + response.status);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('An error occurred:', error);
+                throw error;
+            }
+        }
+
+
+        function updateRequestProcessingTimeTable(numberOfRequests, processingTime) {
+            const tableBody = document.getElementById('request-processing-time-table').getElementsByTagName('tbody')[0];
+            const newRow = tableBody.insertRow();
+            newRow.insertCell(0).textContent = numberOfRequests;
+            newRow.insertCell(1).textContent = processingTime;
+        }
+
+        function enableDownloadResultsButton(results) {
+            const downloadButton = document.getElementById('download-results-button');
+            downloadButton.style.display = 'block';
+            downloadButton.onclick = function () {
+                downloadResultsAsCSV(results);
+            };
+        }
+
+        function downloadResultsAsCSV(results) {
+            const csvContent = 'data:text/csv;charset=utf-8,';
+            const header = 'Number of Requests,Processing Time (ms)\r\n';
+            const csvRows = results.map(r => `${r.numberOfRequests},${r.processingTime}`);
+            const csvString = csvContent + header + csvRows.join('\r\n');
+
+            const encodedUri = encodeURI(csvString);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', 'results.csv');
+            document.body.appendChild(link);
+
+            link.click(); // This will download the CSV file
+            link.remove(); // Remove the link after clicking
+        }
+
+    });
+</script>
+</body>
+</html>
